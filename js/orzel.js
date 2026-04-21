@@ -1,74 +1,161 @@
-// Prosta animacja hologramu - działa od razu, bez czujników
+// Inicjalizacja hologramu
 (function () {
-  console.log("orzel.js loaded - SIMPLE AUTO ANIMATION");
+  console.log("orzel.js loaded");
 
+  // --- Funkcje hologramu ---
   function initHologram() {
     const holos = document.querySelectorAll(".holo-back");
     const bases = document.querySelectorAll(".base-back");
     const tops = document.querySelectorAll(".godlo-top");
 
-    console.log("Found:", holos.length, "holo-back");
+    console.log(
+      "initHologram: found",
+      holos.length,
+      "holo-back,", bases.length, "base-back,", tops.length, "godlo-top"
+    );
 
     if (holos.length === 0) {
       console.warn("No .holo-back elements found!");
       return;
     }
 
-    // Pokaż wszystkie warstwy
-    bases.forEach(base => {
+    // Wymuszenie załadowania obrazów tła
+    bases.forEach((base) => {
       base.style.display = "block";
       base.style.opacity = "1";
     });
 
-    tops.forEach(top => {
+    tops.forEach((top) => {
       top.style.display = "block";
       top.style.opacity = "1";
     });
 
-    // Ustaw początkową widoczność hologramu
-    holos.forEach(holo => {
+    // Inicjalna widoczność hologramu w pozycji pionowej
+    holos.forEach((holo) => {
       holo.style.opacity = "0.7";
       holo.style.backgroundPosition = "center 50%";
     });
 
-    console.log("Hologram initialized - ready for animation");
+    console.log("Hologram initialized successfully");
   }
 
-  initHologram();
+  // Obsługa orientacji (poprawiona płynność)
+  let ticking = false;
+  function handleOrientation(e) {
+    if (e.beta === null) return;
+    
+    // Używamy requestAnimationFrame dla płynności animacji
+    if (!ticking) {
+      requestAnimationFrame(() => {
+        const beta = e.beta;
+        const holos = document.querySelectorAll(".holo-back");
 
-  // AUTOMATYCZNA ANIMACJA - fala przechodzi w górę i w dół
-  let position = 0;
-  let direction = 1;
-  
-  function animate() {
-    const holos = document.querySelectorAll(".holo-back");
-    if (holos.length === 0) return;
-    
-    // Przesuwanie pozycji (0% do 100%)
-    position += direction * 1.5;
-    
-    if (position >= 100) {
-      position = 100;
-      direction = -1;
-    } else if (position <= 0) {
-      position = 0;
-      direction = 1;
+        // Zawsze pokazuj gradient - zmienia się intensywność i pozycja
+        let t = Math.sin(((beta - 90) * Math.PI) / 180);
+        t = Math.abs(t);
+        t = Math.pow(t, 0.6); // Delikatniejsza krzywa dla lepszych wrażeń
+
+        // Zwiększone minimum opacity dla zakresu 60-140
+        let minOpacity = 0.3;
+        if (beta >= 60 && beta <= 140) {
+          minOpacity = 0.65; // mocniejsze kolory w pozycji pionowej
+        }
+        const opacity = Math.max(minOpacity, t);
+
+        // Pozycja przesunięcia w zależności od kąta (zakres 0-100%)
+        const pos = 100 * t;
+
+        // Zastosuj do wszystkich hologramów na stronie
+        holos.forEach((holo) => {
+          holo.style.backgroundPosition = `center ${pos}%`;
+          holo.style.opacity = opacity;
+        });
+        
+        ticking = false;
+      });
+      ticking = true;
     }
-    
-    // Intensywność zmienia się wraz z ruchem
-    let opacity = 0.5 + (Math.sin(position * Math.PI / 100) * 0.4);
-    opacity = Math.min(0.9, Math.max(0.4, opacity));
-    
-    holos.forEach(holo => {
-      holo.style.backgroundPosition = `center ${position}%`;
-      holo.style.opacity = opacity;
-    });
-    
-    requestAnimationFrame(animate);
   }
+
+  // --- Funkcje zgody na czujniki (iOS) ---
+  let isOrientationEnabled = false;
   
-  // Uruchom animację
-  animate();
+  async function requestOrientationPermission() {
+    // Sprawdź czy to iOS (webkit)
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const permissionState = await DeviceOrientationEvent.requestPermission();
+        if (permissionState === 'granted') {
+          console.log("[Orzel] Orientation permission granted for iOS");
+          enableMotionSensor();
+          return true;
+        } else {
+          console.warn("[Orzel] Orientation permission denied");
+          return false;
+        }
+      } catch (err) {
+        console.error("[Orzel] Error requesting permission:", err);
+        return false;
+      }
+    } else {
+      // Android lub desktop - od razu włączamy
+      console.log("[Orzel] Non-iOS device, enabling directly");
+      enableMotionSensor();
+      return true;
+    }
+  }
+
+  function enableMotionSensor() {
+    if (isOrientationEnabled) return;
+    console.log("[Orzel] Enabling device orientation listener");
+    window.addEventListener("deviceorientation", handleOrientation);
+    isOrientationEnabled = true;
+    
+    // Ukryj/usuń przycisk zgody jeśli istnieje
+    const btn = document.getElementById('enable-sensors-btn');
+    if (btn && btn.parentNode) {
+      btn.style.display = 'none';
+    }
+  }
+
+  // --- Inicjalizacja ---
+  // Uruchom podstawowe ustawienia wizualne od razu
+  initHologram();
   
-  console.log("Auto animation started - hologram moves up and down");
+  // Obsługa pageshow dla nawigacji z cache
+  window.addEventListener("pageshow", function (event) {
+    console.log("pageshow event fired, persisted:", event.persisted);
+    initHologram();
+  });
+
+  // Sprawdź czy potrzebujemy zgody (iOS)
+  // Uruchom po kliknięciu w dowolne miejsce na stronie (zgodnie z wymogami iOS)
+  function bindPermissionRequest() {
+    // Jeśli to iOS, czekamy na pierwsze kliknięcie użytkownika
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      console.log("[Orzel] iOS detected - waiting for user interaction");
+      
+      // Obsługa kliknięcia w konkretny przycisk (Pozostałe skróty)
+      const moreBtn = document.querySelector('.quick-actions img[src$="ab011_more_vertical.svg"]')?.closest('.qa-item');
+      if (moreBtn) {
+        moreBtn.addEventListener('click', requestOrientationPermission, { once: true });
+      }
+      
+      // Dodajemy również nasłuch na całe body jako fallback
+      document.body.addEventListener('click', function tempHandler() {
+        requestOrientationPermission();
+        document.body.removeEventListener('click', tempHandler);
+      }, { once: true });
+    } else {
+      // Android - włączamy od razu
+      enableMotionSensor();
+    }
+  }
+
+  // Opóźnij podpinanie, aby DOM był w pełni gotowy
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindPermissionRequest);
+  } else {
+    bindPermissionRequest();
+  }
 })();
